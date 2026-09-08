@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebBIOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+<style>
+:root {
+  --bg: #0a0a0e;
+  --surface: #13131a;
+  --surface-raised: #1c1c26;
+  --ink: #e0e6ed;
+  --ink-muted: #6b7280;
+  --phosphor: #39ff14;
+  --phosphor-dim: #2b8a3e;
+  --phosphor-glow: rgba(57,255,20,0.3);
+  --amber: #ffb000;
+  --cyan: #00d4aa;
+  --danger: #ff4444;
+  --line: rgba(57,255,20,0.12);
+  --line-strong: rgba(57,255,20,0.35);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body {
+  height:100%; background:var(--bg); color:var(--ink);
+  font-family:"JetBrains Mono","Courier New",monospace; font-size:13px; line-height:1.5;
+  overflow:hidden;
+}
+body::before {
+  content:""; position:fixed; inset:0;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,0.08) 0px,rgba(0,0,0,0.08) 1px,transparent 1px,transparent 3px);
+  pointer-events:none; z-index:1000;
+}
+body::after {
+  content:""; position:fixed; inset:0;
+  background:radial-gradient(circle at center,transparent 50%,rgba(0,0,0,0.4) 100%);
+  pointer-events:none; z-index:1001;
+}
+#boot-screen {
+  position:fixed; inset:0; background:var(--bg); z-index:2000;
+  display:flex; flex-direction:column; padding:40px 60px;
+}
+#boot-screen.hidden { display:none; }
+.boot-line { color:var(--phosphor-dim); white-space:pre; opacity:0; animation:fadeIn 0.08s ease forwards; }
+.boot-line.ok { color:var(--phosphor); }
+.boot-line.warn { color:var(--amber); }
+.boot-line.error { color:var(--danger); }
+.boot-line.info { color:var(--cyan); }
+@keyframes fadeIn { to { opacity:1; } }
+.boot-cursor { display:inline-block; width:8px; height:15px; background:var(--phosphor); animation:blink 1s step-end infinite; vertical-align:middle; margin-left:2px; }
+@keyframes blink { 50%{opacity:0;} }
+
+header {
+  background:var(--surface); border-bottom:1px solid var(--line-strong);
+  padding:10px 20px; display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0; z-index:100;
+}
+.brand { display:flex; align-items:center; gap:10px; }
+.brand-logo {
+  width:30px; height:30px; border:2px solid var(--phosphor); border-radius:4px;
+  display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700;
+  color:var(--phosphor); box-shadow:0 0 8px var(--phosphor-glow);
+}
+.brand-text { font-family:"Orbitron",sans-serif; font-size:16px; font-weight:700; color:var(--phosphor); letter-spacing:2px; }
+.brand-version { color:var(--ink-muted); font-size:11px; margin-left:6px; }
+.header-info { display:flex; gap:20px; color:var(--ink-muted); font-size:11px; }
+.dot { width:6px; height:6px; border-radius:50%; background:var(--phosphor-dim); display:inline-block; margin-right:4px; }
+.dot.active { background:var(--phosphor); box-shadow:0 0 4px var(--phosphor); }
+
+.main-container { display:flex; flex:1; overflow:hidden; z-index:100; }
+nav {
+  width:200px; background:var(--surface); border-right:1px solid var(--line);
+  display:flex; flex-direction:column; padding:12px 0; flex-shrink:0;
+}
+.nav-item {
+  padding:9px 18px; cursor:pointer; border-left:3px solid transparent;
+  color:var(--ink-muted); transition:all 0.15s; display:flex; align-items:center; gap:10px;
+  user-select:none; font-size:12px;
+}
+.nav-item:hover { background:var(--surface-raised); color:var(--ink); }
+.nav-item.active { background:var(--surface-raised); border-left-color:var(--phosphor); color:var(--phosphor); }
+.nav-icon { width:18px; text-align:center; font-size:10px; font-family:"Orbitron",sans-serif; }
+.content { flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; }
+
+.panel { background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:18px; margin-bottom:14px; }
+.panel-title { font-family:"Orbitron",sans-serif; font-size:11px; font-weight:500; color:var(--cyan); letter-spacing:1.5px; text-transform:uppercase; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid var(--line); }
+
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th,td { padding:7px 10px; text-align:left; }
+th { color:var(--ink-muted); font-weight:400; border-bottom:1px solid var(--line); }
+td { color:var(--ink); border-bottom:1px solid var(--line); }
+tr:hover td { background:var(--surface-raised); }
+.value-ok { color:var(--phosphor); }
+.value-warn { color:var(--amber); }
+.value-info { color:var(--cyan); }
+.value-error { color:var(--danger); }
+
+.status-msg { padding:10px 14px; border-radius:4px; margin-bottom:14px; font-size:12px; display:none; border:1px solid; }
+.status-msg.show { display:block; }
+.status-msg.info { background:rgba(0,212,170,0.06); border-color:var(--cyan); color:var(--cyan); }
+.status-msg.ok { background:rgba(57,255,20,0.06); border-color:var(--phosphor); color:var(--phosphor); }
+.status-msg.error { background:rgba(255,68,68,0.06); border-color:var(--danger); color:var(--danger); }
+.status-msg.warn { background:rgba(255,176,0,0.06); border-color:var(--amber); color:var(--amber); }
+
+.boot-list { list-style:none; }
+.boot-item {
+  display:flex; align-items:center; gap:12px; padding:10px 12px;
+  border:1px solid var(--line); border-radius:4px; margin-bottom:8px;
+  cursor:pointer; transition:all 0.15s; background:var(--surface-raised); font-size:12px;
+}
+.boot-item:hover { border-color:var(--line-strong); }
+.boot-item.selected { border-color:var(--phosphor); background:rgba(57,255,20,0.05); }
+.boot-num { width:22px; height:22px; border:1px solid var(--line-strong); border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:10px; color:var(--ink-muted); font-family:"Orbitron",sans-serif; }
+.boot-item.selected .boot-num { border-color:var(--phosphor); color:var(--phosphor); }
+.boot-name { flex:1; }
+.boot-type { color:var(--ink-muted); font-size:11px; }
+.boot-status { font-size:11px; padding:2px 8px; border-radius:2px; background:var(--surface); border:1px solid var(--line); }
+.boot-status.connected { color:var(--phosphor); border-color:var(--phosphor-dim); }
+.boot-status.disconnected { color:var(--ink-muted); }
+
+.iso-dropzone {
+  border:2px dashed var(--line-strong); border-radius:4px; padding:35px;
+  text-align:center; cursor:pointer; transition:all 0.2s; background:var(--surface-raised);
+}
+.iso-dropzone:hover,.iso-dropzone.dragover { border-color:var(--phosphor); background:rgba(57,255,20,0.03); }
+.iso-dropzone .icon { font-size:28px; margin-bottom:10px; color:var(--ink-muted); }
+.iso-dropzone:hover .icon,.iso-dropzone.dragover .icon { color:var(--phosphor); }
+.iso-dropzone p { color:var(--ink-muted); margin-bottom:6px; font-size:12px; }
+.iso-dropzone .hint { font-size:11px; color:var(--ink-muted); opacity:0.7; }
+#iso-input { display:none; }
+.iso-list { margin-top:14px; }
+.iso-item {
+  display:flex; align-items:center; gap:12px; padding:10px 12px;
+  border:1px solid var(--line); border-radius:4px; margin-bottom:8px; background:var(--surface-raised);
+}
+.iso-icon { width:32px; height:32px; background:var(--surface); border:1px solid var(--line-strong); border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:10px; color:var(--amber); font-family:"Orbitron",sans-serif; }
+.iso-details { flex:1; }
+.iso-name { color:var(--ink); margin-bottom:2px; font-size:12px; }
+.iso-meta { color:var(--ink-muted); font-size:11px; }
+.iso-actions { display:flex; gap:8px; }
+
+button {
+  background:var(--surface-raised); border:1px solid var(--line-strong);
+  color:var(--ink); padding:6px 14px; border-radius:4px; cursor:pointer;
+  font-family:inherit; font-size:12px; transition:all 0.15s;
+}
+button:hover { border-color:var(--phosphor); color:var(--phosphor); background:rgba(57,255,20,0.05); }
+button.primary { background:var(--phosphor-dim); border-color:var(--phosphor); color:#000; font-weight:500; }
+button.primary:hover { background:var(--phosphor); box-shadow:0 0 10px var(--phosphor-glow); }
+button.danger { border-color:var(--danger); color:var(--danger); }
+button.danger:hover { background:rgba(255,68,68,0.08); }
+button:disabled { opacity:0.4; cursor:not-allowed; }
+
+.slider-row { display:flex; align-items:center; gap:14px; margin:10px 0; }
+.slider-row label { min-width:140px; color:var(--ink); font-size:12px; }
+.slider-row input[type=range] { flex:1; accent-color:var(--phosphor); }
+.slider-value { min-width:70px; text-align:right; color:var(--phosphor); font-size:12px; }
+
+.toggle-row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
+.toggle-row:last-child { border-bottom:none; }
+.toggle-label { color:var(--ink); font-size:12px; }
+.toggle-desc { color:var(--ink-muted); font-size:11px; margin-top:2px; }
+.toggle-switch { width:38px; height:20px; background:var(--surface-raised); border:1px solid var(--line-strong); border-radius:10px; cursor:pointer; position:relative; transition:all 0.2s; flex-shrink:0; }
+.toggle-switch::after { content:""; position:absolute; width:14px; height:14px; background:var(--ink-muted); border-radius:50%; top:2px; left:2px; transition:all 0.2s; }
+.toggle-switch.on { background:rgba(57,255,20,0.1); border-color:var(--phosphor-dim); }
+.toggle-switch.on::after { left:20px; background:var(--phosphor); box-shadow:0 0 6px var(--phosphor-glow); }
+
+#vm-display {
+  position:fixed; inset:0; background:var(--bg); z-index:500;
+  display:none; flex-direction:column;
+}
+#vm-display.active { display:flex; }
+.vm-toolbar {
+  background:var(--surface); border-bottom:1px solid var(--line-strong);
+  padding:8px 14px; display:flex; align-items:center; gap:10px; flex-shrink:0; z-index:10;
+}
+.vm-toolbar span { color:var(--phosphor); font-size:12px; font-family:"Orbitron",sans-serif; }
+.vm-display-area {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:#000; position:relative; overflow:hidden;
+}
+#vm-canvas {
+  image-rendering:pixelated; max-width:100%; max-height:100%;
+  border:1px solid var(--line-strong); display:none;
+}
+#vm-terminal {
+  width:100%; height:100%; padding:8px;
+}
+#vm-terminal .xterm { height:100%; }
+#vm-terminal .xterm-screen { padding:4px; }
+.vm-status {
+  position:absolute; bottom:10px; left:14px;
+  color:var(--ink-muted); font-size:11px;
+}
+.vm-display-toggle { margin-left:auto; display:flex; gap:6px; }
+
+.tab-content { display:none; flex-direction:column; flex:1; }
+.tab-content.active { display:flex; }
+
+footer {
+  background:var(--surface); border-top:1px solid var(--line);
+  padding:8px 20px; display:flex; justify-content:space-between; align-items:center;
+  font-size:11px; color:var(--ink-muted); flex-shrink:0; z-index:100;
+}
+.key-hint { display:flex; gap:14px; }
+kbd {
+  background:var(--surface-raised); border:1px solid var(--line-strong);
+  border-radius:3px; padding:1px 5px; font-family:inherit; font-size:10px; color:var(--ink);
+}
+
+.net-status { display:inline-flex; align-items:center; gap:4px; margin-left:8px; }
+.net-status::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--ink-muted); }
+.net-status.online::before { background:var(--phosphor); box-shadow:0 0 4px var(--phosphor); }
+.net-status.offline::before { background:var(--danger); }
+
+::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar-track { background:var(--surface); }
+::-webkit-scrollbar-thumb { background:var(--line-strong); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--phosphor-dim); }
+
+.qemu-progress { width:100%; height:3px; background:var(--surface-raised); border-radius:2px; overflow:hidden; margin-top:8px; display:none; }
+.qemu-progress.show { display:block; }
+.qemu-progress-fill { height:100%; background:var(--phosphor); width:0%; transition:width 0.3s; box-shadow:0 0 6px var(--phosphor-glow); }
+
+@media (max-width:768px) {
+  nav { width:160px; }
+  .header-info { display:none; }
+  #boot-screen { padding:20px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  *,*::before,*::after { animation:none !important; transition:none !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="boot-screen">
+  <div id="boot-content"></div>
+  <span class="boot-cursor"></span>
+</div>
+
+<div id="vm-display">
+  <div class="vm-toolbar">
+    <span>>> QEMU SYSTEM X86_64</span>
+    <button onclick="App.vm.stop()">Stop VM</button>
+    <button onclick="App.vm.reset()">Reset</button>
+    <button onclick="App.vm.fullscreen()">Fullscreen</button>
+    <div class="vm-display-toggle">
+      <button onclick="App.display.setMode('terminal')" id="btn-term">Terminal</button>
+      <button onclick="App.display.setMode('canvas')" id="btn-canvas">Canvas</button>
+      <button onclick="App.display.setMode('auto')" id="btn-auto" class="primary">Auto</button>
+    </div>
+    <span id="vm-info" style="margin-left:8px; color:var(--ink-muted); font-size:11px;"></span>
+  </div>
+  <div class="vm-display-area">
+    <canvas id="vm-canvas" width="1024" height="768"></canvas>
+    <div id="vm-terminal"></div>
+    <div class="vm-status" id="vm-status">Initializing QEMU...</div>
+  </div>
+</div>
+
+<header>
+  <div class="brand">
+    <div class="brand-logo">WB</div>
+    <div>
+      <span class="brand-text">WEBBIOS</span>
+      <span class="brand-version">v2.4.1-qemu-wasm</span>
+    </div>
+  </div>
+  <div class="header-info">
+    <span><span class="dot active"></span> QEMU-WASM</span>
+    <span><span class="dot active"></span> x86_64</span>
+    <span><span class="dot" id="qemu-dot"></span> QEMU Ready</span>
+    <span class="net-status offline" id="net-indicator">Network Off</span>
+  </div>
+</header>
+
+<div class="main-container">
+  <nav>
+    <div class="nav-item active" data-tab="main" tabindex="0"><span class="nav-icon">M</span> Main</div>
+    <div class="nav-item" data-tab="boot" tabindex="0"><span class="nav-icon">B</span> Boot</div>
+    <div class="nav-item" data-tab="iso" tabindex="0"><span class="nav-icon">I</span> ISO Library</div>
+    <div class="nav-item" data-tab="vmsettings" tabindex="0"><span class="nav-icon">V</span> VM Settings</div>
+    <div class="nav-item" data-tab="network" tabindex="0"><span class="nav-icon">N</span> Network</div>
+    <div class="nav-item" data-tab="security" tabindex="0"><span class="nav-icon">S</span> Security</div>
+    <div class="nav-item" data-tab="exit" tabindex="0"><span class="nav-icon">E</span> Save & Exit</div>
+  </nav>
+
+  <div class="content">
+    <div class="tab-content active" id="tab-main">
+      <div id="status-msg" class="status-msg"></div>
+      <div class="panel">
+        <div class="panel-title">System Information</div>
+        <table>
+          <tr><th>Property</th><th>Value</th></tr>
+          <tr><td>WebBIOS Version</td><td class="value-ok">2.4.1-qemu-wasm-p0</td></tr>
+          <tr><td>Virtualizer</td><td class="value-ok">QEMU System x86_64 (WASM)</td></tr>
+          <tr><td>Host Platform</td><td id="platform">--</td></tr>
+          <tr><td>Host Cores</td><td id="host-cores">--</td></tr>
+          <tr><td>Host RAM (approx)</td><td id="host-ram">--</td></tr>
+          <tr><td>System Date</td><td id="sys-date">--</td></tr>
+          <tr><td>System Time</td><td id="sys-time">--</td></tr>
+          <tr><td>User Agent</td><td id="user-agent" style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">--</td></tr>
+          <tr><td>SharedArrayBuffer</td><td id="sab-status" class="value-warn">Checking...</td></tr>
+          <tr><td>Display Backend</td><td class="value-info">xterm.js (serial) + Canvas (VGA)</td></tr>
+        </table>
+      </div>
+      <div class="panel">
+        <div class="panel-title">QEMU Load Status</div>
+        <table>
+          <tr><th>Component</th><th>Status</th></tr>
+          <tr><td>QEMU Module (out.js)</td><td id="qemu-mod-status" class="value-warn">Not Loaded</td></tr>
+          <tr><td>WASM Binary</td><td id="wasm-status" class="value-warn">Not Loaded</td></tr>
+          <tr><td>Firmware (PC-BIOS)</td><td id="bios-status" class="value-warn">Not Loaded</td></tr>
+          <tr><td>VGA BIOS</td><td id="vga-status" class="value-warn">Not Loaded</td></tr>
+          <tr><td>Network Proxy</td><td id="proxy-status" class="value-warn">Not Connected</td></tr>
+        </table>
+        <div class="qemu-progress" id="qemu-progress"><div class="qemu-progress-fill" id="qemu-progress-fill"></div></div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-boot">
+      <div class="panel">
+        <div class="panel-title">Boot Priority</div>
+        <ul class="boot-list" id="boot-list">
+          <li class="boot-item selected" data-device="cdrom">
+            <span class="boot-num">1</span>
+            <span class="boot-name">CD-ROM (ISO Image)</span>
+            <span class="boot-type">Removable Media</span>
+            <span class="boot-status disconnected" id="iso-status">No Media</span>
+          </li>
+          <li class="boot-item" data-device="hdd">
+            <span class="boot-num">2</span>
+            <span class="boot-name">VirtIO Hard Disk</span>
+            <span class="boot-type">Hard Drive</span>
+            <span class="boot-status disconnected" id="hdd-status">Not Created</span>
+          </li>
+          <li class="boot-item" data-device="pxe">
+            <span class="boot-num">3</span>
+            <span class="boot-name">PXE Network Boot</span>
+            <span class="boot-type">Network</span>
+            <span class="boot-status disconnected">No Network</span>
+          </li>
+        </ul>
+        <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+          <button onclick="App.boot.moveUp()">&#9650; Move Up</button>
+          <button onclick="App.boot.moveDown()">&#9660; Move Down</button>
+          <button onclick="App.vm.createDisk()" id="btn-create-disk">Create Disk</button>
+          <button onclick="App.vm.bootSelected()" class="primary" style="margin-left:auto;" id="btn-boot">Boot Selected Device</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Display Mode</div>
+        <p style="color:var(--ink-muted); font-size:12px; margin-bottom:12px;">
+          Choose how the guest OS display is rendered. Terminal mode is most reliable for Linux text-mode ISOs. Canvas mode attempts VGA framebuffer capture for GUI OSes.
+        </p>
+        <div style="display:flex; gap:8px;">
+          <button onclick="App.display.setMode('terminal')" id="disp-btn-term">Terminal (Serial)</button>
+          <button onclick="App.display.setMode('canvas')" id="disp-btn-canvas">Canvas (VGA)</button>
+          <button onclick="App.display.setMode('auto')" id="disp-btn-auto" class="primary">Auto-Detect</button>
+        </div>
+        <p style="color:var(--amber); font-size:11px; margin-top:10px;">
+          Note: Canvas/VGA mode requires QEMU built with SDL or framebuffer support. If the canvas stays black, switch to Terminal mode.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Boot Options</div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Fast Boot</div><div class="toggle-desc">Skip some POST checks</div></div>
+          <span class="toggle-switch on" id="toggle-fastboot" onclick="this.classList.toggle('on')"></span>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">UEFI Boot</div><div class="toggle-desc">Use UEFI firmware (OVMF) instead of legacy BIOS</div></div>
+          <span class="toggle-switch" id="toggle-uefi" onclick="this.classList.toggle('on')"></span>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Boot Menu</div><div class="toggle-desc">Show boot device selection menu on startup</div></div>
+          <span class="toggle-switch on" id="toggle-bootmenu" onclick="this.classList.toggle('on')"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-iso">
+      <div class="panel">
+        <div class="panel-title">Load ISO Image</div>
+        <div class="iso-dropzone" id="iso-dropzone">
+          <div class="icon">&#128190;</div>
+          <p>Drop .iso file here or click to browse</p>
+          <span class="hint">Alpine, Debian, Ubuntu Server, FreeDOS, Windows. Any bootable x86/x86_64 ISO.</span>
+        </div>
+        <input type="file" id="iso-input" accept=".iso">
+        <div class="iso-list" id="iso-list"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Detected OS Profiles</div>
+        <table>
+          <tr><th>OS</th><th>Size</th><th>Display</th><th>Expected Performance</th></tr>
+          <tr><td>Alpine Linux</td><td>~180 MB</td><td class="value-info">Terminal</td><td class="value-ok">Fast</td></tr>
+          <tr><td>Debian Netinst</td><td>~400 MB</td><td class="value-info">Terminal</td><td class="value-ok">Good</td></tr>
+          <tr><td>Tiny Core Linux</td><td>~25 MB</td><td class="value-info">Terminal / GUI</td><td class="value-ok">Very Fast</td></tr>
+          <tr><td>FreeDOS</td><td>~20 MB</td><td class="value-info">Terminal</td><td class="value-ok">Fast</td></tr>
+          <tr><td>Windows 98/XP</td><td>~600 MB</td><td class="value-warn">Canvas (VGA)</td><td class="value-warn">Slow</td></tr>
+          <tr><td>Windows 10/11</td><td>~5 GB</td><td class="value-warn">Canvas (VGA)</td><td class="value-error">Very Slow</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-vmsettings">
+      <div class="panel">
+        <div class="panel-title">Virtual Machine Configuration</div>
+        <div class="slider-row">
+          <label>Guest RAM (MB)</label>
+          <input type="range" id="ram-slider" min="256" max="4096" step="256" value="1024" oninput="App.config.update('ram',this.value)">
+          <span class="slider-value" id="ram-value">1024 MB</span>
+        </div>
+        <div class="slider-row">
+          <label>vCPUs</label>
+          <input type="range" id="cpu-slider" min="1" max="4" step="1" value="2" oninput="App.config.update('cpu',this.value)">
+          <span class="slider-value" id="cpu-value">2</span>
+        </div>
+        <div class="slider-row">
+          <label>Virtual Disk Size (GB)</label>
+          <input type="range" id="disk-slider" min="1" max="20" step="1" value="4" oninput="App.config.update('disk',this.value)">
+          <span class="slider-value" id="disk-value">4 GB</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Advanced QEMU Flags</div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Enable KVM</div><div class="toggle-desc">Host acceleration. Not available in WASM.</div></div>
+          <span class="toggle-switch"></span>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">VirtIO Devices</div><div class="toggle-desc">Paravirtualized disk and network</div></div>
+          <span class="toggle-switch on" id="toggle-virtio" onclick="this.classList.toggle('on')"></span>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">ACPI</div><div class="toggle-desc">Expose ACPI tables to guest</div></div>
+          <span class="toggle-switch on" id="toggle-acpi" onclick="this.classList.toggle('on')"></span>
+        </div>
+        <div style="margin-top:12px;">
+          <label style="color:var(--ink-muted); font-size:11px;">Additional QEMU Arguments:</label>
+          <input type="text" id="extra-args" placeholder="-cpu qemu64,+vmx -no-reboot" style="width:100%; margin-top:6px; padding:8px; background:var(--surface-raised); border:1px solid var(--line); color:var(--ink); border-radius:4px; font-family:inherit; font-size:12px;">
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-network">
+      <div class="panel">
+        <div class="panel-title">Network Configuration</div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Enable Network</div>
+            <div class="toggle-desc">Connect guest OS to network via WebSocket proxy</div>
+          </div>
+          <span class="toggle-switch" id="toggle-network" onclick="App.network.toggle(this)"></span>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Use Host Network Bridge</div>
+            <div class="toggle-desc">Guest shares the host machine's internet connection via proxy</div>
+          </div>
+          <span class="toggle-switch on" id="toggle-hostnet" onclick="this.classList.toggle('on')"></span>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">SLIRP NAT (Internal)</div>
+            <div class="toggle-desc">QEMU's built-in user-mode NAT. Guest can reach proxy only.</div>
+          </div>
+          <span class="toggle-switch on" id="toggle-slirp" onclick="this.classList.toggle('on')"></span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Proxy Server Status</div>
+        <table>
+          <tr><th>Setting</th><th>Value</th></tr>
+          <tr><td>Proxy URL</td><td class="value-info">ws://localhost:8081</td></tr>
+          <tr><td>Connection Status</td><td id="proxy-conn-status" class="value-warn">Disconnected</td></tr>
+          <tr><td>Guest IP (SLIRP)</td><td id="guest-ip">10.0.2.15 (default)</td></tr>
+          <tr><td>Host Gateway</td><td id="host-gateway">10.0.2.2</td></tr>
+          <tr><td>DNS</td><td id="guest-dns">10.0.2.3</td></tr>
+        </table>
+        <p style="color:var(--ink-muted); font-size:11px; margin-top:10px;">
+          The WebSocket proxy server runs alongside the HTTP server (see server.py). When enabled, QEMU's network traffic is tunneled through this proxy, giving the guest access to the host's internet connection.
+        </p>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-security">
+      <div class="panel">
+        <div class="panel-title">Security Settings</div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Secure Boot</div><div class="toggle-desc">Verify bootloader signatures (requires UEFI)</div></div>
+          <span class="toggle-switch" onclick="this.classList.toggle('on')"></span>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">TPM Virtualization</div><div class="toggle-desc">Expose emulated TPM 2.0 device</div></div>
+          <span class="toggle-switch" onclick="this.classList.toggle('on')"></span>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">I/O Memory Protection</div><div class="toggle-desc">Prevent unauthorized DMA access</div></div>
+          <span class="toggle-switch on" onclick="this.classList.toggle('on')"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-exit">
+      <div class="panel" style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
+        <div class="panel-title" style="border:none;">Save Configuration & Exit</div>
+        <p style="color:var(--ink-muted); margin-bottom:24px; max-width:420px; font-size:12px;">
+          Save VM settings to browser localStorage, or reset to defaults. All ISO files remain in memory until the page is refreshed.
+        </p>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+          <button class="primary" onclick="App.config.save()">Save Settings</button>
+          <button onclick="App.config.load()">Reload Saved Settings</button>
+          <button onclick="App.config.defaults()">Load Optimized Defaults</button>
+          <button class="danger" onclick="App.config.clear()">Clear All Data</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="key-hint">
+    <span class="key"><kbd>&uarr;</kbd><kbd>&darr;</kbd> Select</span>
+    <span class="key"><kbd>Enter</kbd> Choose</span>
+    <span class="key"><kbd>Esc</kbd> Stop VM</span>
+    <span class="key"><kbd>F10</kbd> Save & Exit</span>
+  </div>
+  <div id="footer-msg">WebBIOS Ready</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+
+<script type="module">
+import createQEMU from './out.js';
+window.QEMUFactory = createQEMU;
+document.dispatchEvent(new CustomEvent('qemu-loader-ready'));
+</script>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
