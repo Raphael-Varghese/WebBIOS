@@ -1,3 +1,4 @@
 build.sh
 /build/*
 qemu_wasm_build/*
+qemu_artifacts.zip
